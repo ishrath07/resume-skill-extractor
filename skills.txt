@@ -1,0 +1,12 @@
+RAG
+Retrieval-Augmented Generation
+Generative AI
+OCR
+embeddings
+Machine Learning
+Deep Learning
+NLP
+Natural Language Processing
+LLM
+Large Language Models
+Prompt Engineering

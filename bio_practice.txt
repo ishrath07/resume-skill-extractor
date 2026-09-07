@@ -1,0 +1,3 @@
+"Machine Learning" ---- B-SKILL("Machine")
+                        I-SKILL("Learning")
+"Python"----------------B-SKILL("Python") 

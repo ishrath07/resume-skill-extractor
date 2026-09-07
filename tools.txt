@@ -1,0 +1,6 @@
+Streamlit
+LangChain
+ChromaDB
+Azure OpenAI
+GPT-4o
+Vector Databases

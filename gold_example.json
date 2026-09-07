@@ -1,0 +1,12 @@
+{
+  "text": "Built and deployed a secure RAG chatbot using Streamlit, Azure OpenAI GPT-4o, LangChain, ChromaDB, OCR, and embeddings, cutting manual document review effort by 70%.",
+  "entities": [
+    {"text": "RAG", "label": "SKILL"},
+    {"text": "Streamlit", "label": "TOOL"},
+    {"text": "Azure OpenAI", "label": "TOOL"},
+    {"text": "LangChain", "label": "TOOL"},
+    {"text": "ChromaDB", "label": "TOOL"},
+    {"text": "OCR", "label": "SKILL"},
+    {"text": "embeddings", "label": "SKILL"}
+  ]
+}

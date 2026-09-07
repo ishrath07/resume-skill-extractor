@@ -1,0 +1,4 @@
+pdfplumber>=0.11.0
+spacy>=3.7.0
+gradio>=4.44.0
+reportlab>=4.2.0
