@@ -7,6 +7,7 @@ from src.highlight import highlight_text
 from src.ner import extract_entities
 from src.metrics import precision_recall_f1, measure_latency_ms
 from src.hf_ner import get_hf_entities, HF_AVAILABLE
+from src.jd_match import match_resume_to_jd
 
 
 def load_gold(path):
@@ -98,6 +99,19 @@ CUSTOM_CSS = """
 #file-pill .filename {
     text-align: left !important;
     margin-right: auto !important;
+}
+
+/* --- JD Match tab --- */
+#jd-input textarea {
+    border-radius: 14px !important;
+}
+.jd-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 3px 4px 3px 0;
 }
 """
 
@@ -198,6 +212,71 @@ def build_comparison_html(spacy_entities, hf_entities):
     """
 
 
+def build_jd_match_html(match_result):
+    score_pct = match_result["match_score"] * 100
+
+    if score_pct >= 75:
+        score_color = "#10b981"
+    elif score_pct >= 45:
+        score_color = "#f59e0b"
+    else:
+        score_color = "#ef4444"
+
+    def keyword_badges(keywords, color):
+        if not keywords:
+            return "<p style='color:#6b7280; font-size:13px;'>None</p>"
+        badges = "".join(
+            f'<span class="jd-badge" style="background:{color}22; color:{color}; '
+            f'border:1px solid {color}44;">{kw}</span>'
+            for kw in keywords
+        )
+        return f"<div>{badges}</div>"
+
+    suggestions_html = "".join(
+        f"""
+        <div style="background: rgba(255,255,255,0.03); border-left: 3px solid #14b8a6;
+                    border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;
+                    color:#d1d5db; font-size:14px; line-height:1.6;">
+            {s}
+        </div>
+        """
+        for s in match_result["suggestions"]
+    )
+
+    return f"""
+        <div style="text-align:center; margin-bottom:20px;">
+            <div style="font-size:48px; font-weight:800; color:{score_color};">{score_pct:.0f}%</div>
+            <div style="color:#9ca3af; font-size:13px; text-transform:uppercase; letter-spacing:0.06em;">
+                Match Score
+            </div>
+            <div style="color:#6b7280; font-size:12px; margin-top:4px;">
+                {match_result['resume_keyword_count']} skills/tools on resume &nbsp;·&nbsp;
+                {match_result['jd_keyword_count']} required by JD
+            </div>
+        </div>
+
+        <div style="color:#10b981; font-weight:700; font-size:13px; text-transform:uppercase; margin-bottom:8px;">
+            ✅ Matched keywords ({len(match_result['matched_keywords'])})
+        </div>
+        {keyword_badges(match_result['matched_keywords'], '#10b981')}
+
+        <div style="color:#ef4444; font-weight:700; font-size:13px; text-transform:uppercase; margin:18px 0 8px;">
+            ⚠️ Missing keywords ({len(match_result['missing_keywords'])})
+        </div>
+        {keyword_badges(match_result['missing_keywords'], '#ef4444')}
+
+        <div style="color:#9ca3af; font-weight:700; font-size:13px; text-transform:uppercase; margin:18px 0 8px;">
+            ➕ On your resume, not in this JD ({len(match_result['extra_keywords'])})
+        </div>
+        {keyword_badges(match_result['extra_keywords'], '#9ca3af')}
+
+        <div style="color:#5eead4; font-weight:700; font-size:13px; text-transform:uppercase; margin:22px 0 8px;">
+            💡 Suggestions
+        </div>
+        {suggestions_html}
+    """
+
+
 def run_evaluation():
     gold_data = load_gold("data/gold_example.json")
     gold_text = gold_data["text"]
@@ -269,7 +348,7 @@ def run_evaluation():
 def process_resume(pdf_file):
     if pdf_file is None:
         empty = "<p style='color:#6b7280;'>Upload a resume PDF to get started.</p>"
-        return empty, empty, "{}", "", empty
+        return empty, empty, "{}", "", empty, [], ""
 
     start = time.perf_counter()
     text, result = analyze_pdf(pdf_file.name)
@@ -290,12 +369,34 @@ def process_resume(pdf_file):
 
     comparison_html = build_comparison_html(result["entities"], hf_entities)
 
-    return highlighted, sections_html, json_text, latency_text, comparison_html
+    # result["entities"] is stashed in state so the JD Match tab doesn't need to
+    # re-upload the PDF or re-run NER on the resume.
+    return (
+        highlighted,
+        sections_html,
+        json_text,
+        latency_text,
+        comparison_html,
+        result["entities"],
+        "<p style='color:#6b7280;'>Resume loaded. Paste a job description and click <b>Match</b>.</p>",
+    )
+
+
+def run_jd_match(resume_entities, jd_text):
+    if not resume_entities:
+        return "<p style='color:#ef4444;'>Upload and extract a resume first (see the search bar above).</p>"
+    if not jd_text or not jd_text.strip():
+        return "<p style='color:#ef4444;'>Paste a job description to match against.</p>"
+
+    match_result = match_resume_to_jd(resume_entities, jd_text)
+    return build_jd_match_html(match_result)
 
 
 with gr.Blocks(theme=gr.themes.Soft(primary_hue="teal"), css=CUSTOM_CSS, title="Resume Skill Extractor") as demo:
     gr.HTML("<div id='title'>Resume Skill Extractor</div>")
     gr.HTML("<div id='subtitle'>Upload a resume — see skills, tools, and experience extracted instantly</div>")
+
+    resume_entities_state = gr.State([])
 
     with gr.Row(elem_id="search-bar-row", equal_height=True):
         with gr.Column(scale=5, min_width=0):
@@ -323,11 +424,34 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="teal"), css=CUSTOM_CSS, title="
                 eval_output = gr.HTML(value=run_evaluation())
             with gr.Tab("🤖 spaCy vs HF"):
                 comparison_output = gr.HTML()
+            with gr.Tab("🎯 JD Match"):
+                jd_input = gr.Textbox(
+                    label="Paste job description",
+                    placeholder="Paste the full job description here...",
+                    lines=10,
+                    elem_id="jd-input",
+                )
+                jd_match_btn = gr.Button("Match", variant="primary")
+                jd_match_output = gr.HTML()
 
     extract_btn.click(
         fn=process_resume,
         inputs=[file_input],
-        outputs=[highlighted_output, sections_output, json_output, latency_display, comparison_output],
+        outputs=[
+            highlighted_output,
+            sections_output,
+            json_output,
+            latency_display,
+            comparison_output,
+            resume_entities_state,
+            jd_match_output,
+        ],
+    )
+
+    jd_match_btn.click(
+        fn=run_jd_match,
+        inputs=[resume_entities_state, jd_input],
+        outputs=[jd_match_output],
     )
 
 if __name__ == "__main__":
